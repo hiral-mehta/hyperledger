@@ -1,0 +1,16 @@
+version: "3.7"
+
+services:
+  interbank_ccaas:
+    container_name: interbank_ccaas
+    image: node:20
+    working_dir: /usr/src/app
+    command: bash -c "npm install && npm start -- --peer.address host.docker.internal:7051 --chaincode-id-name interbank_1.0"
+    volumes:
+      - ./chaincode-javascript:/usr/src/app
+    environment:
+      - CORE_CHAINCODE_ID_NAME=interbank_1.0
+      - CORE_CHAINCODE_ADDRESS=0.0.0.0:9999
+      - CORE_CHAINCODE_LOGGING_LEVEL=info
+    ports:
+      - "9999:9999"
