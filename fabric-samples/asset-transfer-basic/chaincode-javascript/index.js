@@ -1,12 +1,11 @@
 /*
- * Copyright IBM Corp. All Rights Reserved.
- *
- * SPDX-License-Identifier: Apache-2.0
+ * Inter-Bank Fund Transfer & Settlement System
+ * Hyperledger Fabric Chaincode Entry Point
  */
 
 'use strict';
 
-const interbankTransfer = require('./lib/interbankTransfer');
+const InterbankTransfer = require('./lib/interbankTransfer');
 
-module.exports.InterbankTransfer = interbankTransfer;
-module.exports.contracts = [interbankTransfer];
+module.exports.InterbankTransfer = InterbankTransfer;
+module.exports.contracts = [InterbankTransfer];

@@ -1,167 +1,384 @@
 /*
- * Copyright IBM Corp. All Rights Reserved.
+ * Inter-Bank Fund Transfer & Settlement System
+ * Hyperledger Fabric Smart Contract
  *
- * SPDX-License-Identifier: Apache-2.0
+ * Features:
+ *  - Account creation with bank association
+ *  - Balance validation before transfer
+ *  - Secure fund transfer with immutable transaction records
+ *  - Full audit trail and settlement traceability
  */
 
 'use strict';
 
-// Deterministic JSON.stringify()
-const stringify  = require('json-stringify-deterministic');
-const sortKeysRecursive  = require('sort-keys-recursive');
+const stringify = require('json-stringify-deterministic');
+const sortKeysRecursive = require('sort-keys-recursive');
 const { Contract } = require('fabric-contract-api');
 
-class AssetTransfer extends Contract {
+class InterbankTransfer extends Contract {
+
+    // ─────────────────────────────────────────────
+    // LEDGER INITIALIZATION
+    // ─────────────────────────────────────────────
 
     async InitLedger(ctx) {
-        const assets = [
+        const accounts = [
             {
-                ID: 'asset1',
-                Color: 'blue',
-                Size: 5,
-                Owner: 'Tomoko',
-                AppraisedValue: 300,
+                docType: 'account',
+                accountId: 'ACC001',
+                accountHolder: 'Rahul Sharma',
+                bankName: 'State Bank of India',
+                bankCode: 'SBI001',
+                balance: 500000,
+                currency: 'INR',
+                status: 'ACTIVE',
+                createdAt: new Date().toISOString(),
             },
             {
-                ID: 'asset2',
-                Color: 'red',
-                Size: 5,
-                Owner: 'Brad',
-                AppraisedValue: 400,
+                docType: 'account',
+                accountId: 'ACC002',
+                accountHolder: 'Priya Patel',
+                bankName: 'HDFC Bank',
+                bankCode: 'HDFC001',
+                balance: 750000,
+                currency: 'INR',
+                status: 'ACTIVE',
+                createdAt: new Date().toISOString(),
             },
             {
-                ID: 'asset3',
-                Color: 'green',
-                Size: 10,
-                Owner: 'Jin Soo',
-                AppraisedValue: 500,
-            },
-            {
-                ID: 'asset4',
-                Color: 'yellow',
-                Size: 10,
-                Owner: 'Max',
-                AppraisedValue: 600,
-            },
-            {
-                ID: 'asset5',
-                Color: 'black',
-                Size: 15,
-                Owner: 'Adriana',
-                AppraisedValue: 700,
-            },
-            {
-                ID: 'asset6',
-                Color: 'white',
-                Size: 15,
-                Owner: 'Michel',
-                AppraisedValue: 800,
+                docType: 'account',
+                accountId: 'ACC003',
+                accountHolder: 'Amit Verma',
+                bankName: 'ICICI Bank',
+                bankCode: 'ICICI001',
+                balance: 1000000,
+                currency: 'INR',
+                status: 'ACTIVE',
+                createdAt: new Date().toISOString(),
             },
         ];
 
-        for (const asset of assets) {
-            asset.docType = 'asset';
-            // example of how to write to world state deterministically
-            // use convetion of alphabetic order
-            // we insert data in alphabetic order using 'json-stringify-deterministic' and 'sort-keys-recursive'
-            // when retrieving data, in any lang, the order of data will be the same and consequently also the corresonding hash
-            await ctx.stub.putState(asset.ID, Buffer.from(stringify(sortKeysRecursive(asset))));
+        for (const account of accounts) {
+            await ctx.stub.putState(
+                account.accountId,
+                Buffer.from(stringify(sortKeysRecursive(account)))
+            );
+            console.log(`Initialized account: ${account.accountId}`);
         }
     }
 
-    // CreateAsset issues a new asset to the world state with given details.
-    async CreateAsset(ctx, id, color, size, owner, appraisedValue) {
-        const exists = await this.AssetExists(ctx, id);
+    // ─────────────────────────────────────────────
+    // ACCOUNT MANAGEMENT
+    // ─────────────────────────────────────────────
+
+    /**
+     * CreateAccount - Register a new bank account on the ledger
+     * @param {String} accountId   - Unique account identifier
+     * @param {String} accountHolder - Full name of account holder
+     * @param {String} bankName    - Name of the bank
+     * @param {String} bankCode    - Unique bank code (e.g. SBI001)
+     * @param {String} initialBalance - Opening balance
+     * @param {String} currency    - Currency code (e.g. INR, USD)
+     */
+    async CreateAccount(ctx, accountId, accountHolder, bankName, bankCode, initialBalance, currency) {
+        const exists = await this.AccountExists(ctx, accountId);
         if (exists) {
-            throw new Error(`The asset ${id} already exists`);
+            throw new Error(`Account ${accountId} already exists`);
         }
 
-        const asset = {
-            ID: id,
-            Color: color,
-            Size: Number(size),
-            Owner: owner,
-            AppraisedValue: Number(appraisedValue),
+        const balance = parseFloat(initialBalance);
+        if (isNaN(balance) || balance < 0) {
+            throw new Error('Initial balance must be a non-negative number');
+        }
+
+        const account = {
+            docType: 'account',
+            accountId,
+            accountHolder,
+            bankName,
+            bankCode,
+            balance,
+            currency,
+            status: 'ACTIVE',
+            createdAt: new Date().toISOString(),
         };
-        // we insert data in alphabetic order using 'json-stringify-deterministic' and 'sort-keys-recursive'
-        await ctx.stub.putState(id, Buffer.from(stringify(sortKeysRecursive(asset))));
-        return JSON.stringify(asset);
+
+        await ctx.stub.putState(
+            accountId,
+            Buffer.from(stringify(sortKeysRecursive(account)))
+        );
+
+        // Emit account creation event
+        await ctx.stub.setEvent('AccountCreated', Buffer.from(JSON.stringify({ accountId, bankName, accountHolder })));
+
+        return JSON.stringify(account);
     }
 
-    // ReadAsset returns the asset stored in the world state with given id.
-    async ReadAsset(ctx, id) {
-        const assetJSON = await ctx.stub.getState(id); // get the asset from chaincode state
-        if (!assetJSON || assetJSON.length === 0) {
-            throw new Error(`The asset ${id} does not exist`);
+    /**
+     * GetAccount - Read account details from ledger
+     */
+    async GetAccount(ctx, accountId) {
+        const accountJSON = await ctx.stub.getState(accountId);
+        if (!accountJSON || accountJSON.length === 0) {
+            throw new Error(`Account ${accountId} does not not exist`);
         }
-        return assetJSON.toString();
+        return accountJSON.toString();
     }
 
-    // UpdateAsset updates an existing asset in the world state with provided parameters.
-    async UpdateAsset(ctx, id, color, size, owner, appraisedValue) {
-        const exists = await this.AssetExists(ctx, id);
-        if (!exists) {
-            throw new Error(`The asset ${id} does not exist`);
+    /**
+     * FreezeAccount - Freeze an account (e.g. for compliance/audit)
+     */
+    async FreezeAccount(ctx, accountId) {
+        const accountString = await this.GetAccount(ctx, accountId);
+        const account = JSON.parse(accountString);
+        account.status = 'FROZEN';
+        await ctx.stub.putState(
+            accountId,
+            Buffer.from(stringify(sortKeysRecursive(account)))
+        );
+        return JSON.stringify({ success: true, accountId, status: 'FROZEN' });
+    }
+
+    /**
+     * UnfreezeAccount - Reactivate a frozen account
+     */
+    async UnfreezeAccount(ctx, accountId) {
+        const accountString = await this.GetAccount(ctx, accountId);
+        const account = JSON.parse(accountString);
+        account.status = 'ACTIVE';
+        await ctx.stub.putState(
+            accountId,
+            Buffer.from(stringify(sortKeysRecursive(account)))
+        );
+        return JSON.stringify({ success: true, accountId, status: 'ACTIVE' });
+    }
+
+    /**
+     * AccountExists - Check if account exists
+     */
+    async AccountExists(ctx, accountId) {
+        const accountJSON = await ctx.stub.getState(accountId);
+        return accountJSON && accountJSON.length > 0;
+    }
+
+    // ─────────────────────────────────────────────
+    // FUND TRANSFER
+    // ─────────────────────────────────────────────
+
+    /**
+     * InitiateTransfer - Transfer funds between two bank accounts
+     * @param {String} txnId         - Unique transaction ID
+     * @param {String} fromAccountId - Sender's account ID
+     * @param {String} toAccountId   - Receiver's account ID
+     * @param {String} amount        - Amount to transfer
+     * @param {String} remarks       - Optional transfer remarks
+     */
+    async InitiateTransfer(ctx, txnId, fromAccountId, toAccountId, amount, remarks) {
+        // Validate transaction ID uniqueness
+        const txnKey = `TXN_${txnId}`;
+        const existingTxn = await ctx.stub.getState(txnKey);
+        if (existingTxn && existingTxn.length > 0) {
+            throw new Error(`Transaction ${txnId} already exists`);
         }
 
-        // overwriting original asset with new asset
-        const updatedAsset = {
-            ID: id,
-            Color: color,
-            Size: size,
-            Owner: owner,
-            AppraisedValue: appraisedValue,
+        const transferAmount = parseFloat(amount);
+        if (isNaN(transferAmount) || transferAmount <= 0) {
+            throw new Error('Transfer amount must be a positive number');
+        }
+
+        // Load sender account
+        const fromAccountJSON = await ctx.stub.getState(fromAccountId);
+        if (!fromAccountJSON || fromAccountJSON.length === 0) {
+            throw new Error(`Sender account ${fromAccountId} does not exist`);
+        }
+        const fromAccount = JSON.parse(fromAccountJSON.toString());
+
+        // Load receiver account
+        const toAccountJSON = await ctx.stub.getState(toAccountId);
+        if (!toAccountJSON || toAccountJSON.length === 0) {
+            throw new Error(`Receiver account ${toAccountId} does not exist`);
+        }
+        const toAccount = JSON.parse(toAccountJSON.toString());
+
+        // Validate account statuses
+        if (fromAccount.status !== 'ACTIVE') {
+            throw new Error(`Sender account ${fromAccountId} is ${fromAccount.status}. Cannot transfer.`);
+        }
+        if (toAccount.status !== 'ACTIVE') {
+            throw new Error(`Receiver account ${toAccountId} is ${toAccount.status}. Cannot receive funds.`);
+        }
+
+        // Validate currency match
+        if (fromAccount.currency !== toAccount.currency) {
+            throw new Error(`Currency mismatch: ${fromAccount.currency} vs ${toAccount.currency}`);
+        }
+
+        // Balance check
+        if (fromAccount.balance < transferAmount) {
+            throw new Error(
+                `Insufficient balance. Available: ${fromAccount.balance} ${fromAccount.currency}, ` +
+                `Requested: ${transferAmount} ${fromAccount.currency}`
+            );
+        }
+
+        const timestamp = new Date().toISOString();
+
+        // Debit sender
+        fromAccount.balance = parseFloat((fromAccount.balance - transferAmount).toFixed(2));
+
+        // Credit receiver
+        toAccount.balance = parseFloat((toAccount.balance + transferAmount).toFixed(2));
+
+        // Build transaction record
+        const transaction = {
+            docType: 'transaction',
+            txnId,
+            fromAccountId,
+            fromBank: fromAccount.bankName,
+            fromBankCode: fromAccount.bankCode,
+            toAccountId,
+            toBank: toAccount.bankName,
+            toBankCode: toAccount.bankCode,
+            amount: transferAmount,
+            currency: fromAccount.currency,
+            remarks: remarks || '',
+            status: 'SETTLED',
+            initiatedAt: timestamp,
+            settledAt: timestamp,
         };
-        // we insert data in alphabetic order using 'json-stringify-deterministic' and 'sort-keys-recursive'
-        return ctx.stub.putState(id, Buffer.from(stringify(sortKeysRecursive(updatedAsset))));
+
+        // Write updated accounts and transaction atomically
+        await ctx.stub.putState(
+            fromAccountId,
+            Buffer.from(stringify(sortKeysRecursive(fromAccount)))
+        );
+        await ctx.stub.putState(
+            toAccountId,
+            Buffer.from(stringify(sortKeysRecursive(toAccount)))
+        );
+        await ctx.stub.putState(
+            txnKey,
+            Buffer.from(stringify(sortKeysRecursive(transaction)))
+        );
+
+        // Emit transfer event for external listeners
+        await ctx.stub.setEvent('FundTransferred', Buffer.from(JSON.stringify({
+            txnId,
+            fromAccountId,
+            toAccountId,
+            amount: transferAmount,
+            currency: fromAccount.currency,
+            timestamp,
+        })));
+
+        return JSON.stringify(transaction);
     }
 
-    // DeleteAsset deletes an given asset from the world state.
-    async DeleteAsset(ctx, id) {
-        const exists = await this.AssetExists(ctx, id);
-        if (!exists) {
-            throw new Error(`The asset ${id} does not exist`);
+    // ─────────────────────────────────────────────
+    // AUDIT & QUERY
+    // ─────────────────────────────────────────────
+
+    /**
+     * GetTransaction - Retrieve a specific transaction record
+     */
+    async GetTransaction(ctx, txnId) {
+        const txnKey = `TXN_${txnId}`;
+        const txnJSON = await ctx.stub.getState(txnKey);
+        if (!txnJSON || txnJSON.length === 0) {
+            throw new Error(`Transaction ${txnId} not found`);
         }
-        return ctx.stub.deleteState(id);
+        return txnJSON.toString();
     }
 
-    // AssetExists returns true when asset with given ID exists in world state.
-    async AssetExists(ctx, id) {
-        const assetJSON = await ctx.stub.getState(id);
-        return assetJSON && assetJSON.length > 0;
+    /**
+     * GetAccountHistory - Full immutable history of an account (audit trail)
+     */
+    async GetAccountHistory(ctx, accountId) {
+        const exists = await this.AccountExists(ctx, accountId);
+        if (!exists) {
+            throw new Error(`Account ${accountId} does not exist`);
+        }
+
+        const historyIterator = await ctx.stub.getHistoryForKey(accountId);
+        const history = [];
+        let result = await historyIterator.next();
+
+        while (!result.done) {
+            const entry = {
+                txId: result.value.txId,
+                timestamp: new Date(result.value.timestamp.seconds.low * 1000).toISOString(),
+                isDelete: result.value.isDelete,
+                data: result.value.value.toString('utf8'),
+            };
+            history.push(entry);
+            result = await historyIterator.next();
+        }
+
+        await historyIterator.close();
+        return JSON.stringify(history);
     }
 
-    // TransferAsset updates the owner field of asset with given id in the world state.
-    async TransferAsset(ctx, id, newOwner) {
-        const assetString = await this.ReadAsset(ctx, id);
-        const asset = JSON.parse(assetString);
-        const oldOwner = asset.Owner;
-        asset.Owner = newOwner;
-        // we insert data in alphabetic order using 'json-stringify-deterministic' and 'sort-keys-recursive'
-        await ctx.stub.putState(id, Buffer.from(stringify(sortKeysRecursive(asset))));
-        return oldOwner;
-    }
-
-    // GetAllAssets returns all assets found in the world state.
-    async GetAllAssets(ctx) {
+    /**
+     * GetAllAccounts - List all accounts on the ledger
+     */
+    async GetAllAccounts(ctx) {
         const allResults = [];
-        // range query with empty string for startKey and endKey does an open-ended query of all assets in the chaincode namespace.
         const iterator = await ctx.stub.getStateByRange('', '');
         let result = await iterator.next();
+
         while (!result.done) {
             const strValue = Buffer.from(result.value.value.toString()).toString('utf8');
-            let record;
             try {
-                record = JSON.parse(strValue);
+                const record = JSON.parse(strValue);
+                if (record.docType === 'account') {
+                    allResults.push(record);
+                }
             } catch (err) {
                 console.log(err);
-                record = strValue;
             }
-            allResults.push(record);
             result = await iterator.next();
         }
+        await iterator.close();
         return JSON.stringify(allResults);
+    }
+
+    /**
+     * GetAllTransactions - List all settlement records on the ledger
+     */
+    async GetAllTransactions(ctx) {
+        const allResults = [];
+        const iterator = await ctx.stub.getStateByRange('TXN_', 'TXN_~');
+        let result = await iterator.next();
+
+        while (!result.done) {
+            const strValue = Buffer.from(result.value.value.toString()).toString('utf8');
+            try {
+                const record = JSON.parse(strValue);
+                allResults.push(record);
+            } catch (err) {
+                console.log(err);
+            }
+            result = await iterator.next();
+        }
+        await iterator.close();
+        return JSON.stringify(allResults);
+    }
+
+    /**
+     * GetBalance - Get current balance of an account
+     */
+    async GetBalance(ctx, accountId) {
+        const accountString = await this.GetAccount(ctx, accountId);
+        const account = JSON.parse(accountString);
+        return JSON.stringify({
+            accountId,
+            accountHolder: account.accountHolder,
+            bankName: account.bankName,
+            balance: account.balance,
+            currency: account.currency,
+            status: account.status,
+        });
     }
 }
 
-module.exports = AssetTransfer;
+module.exports = InterbankTransfer;

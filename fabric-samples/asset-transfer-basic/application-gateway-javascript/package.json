@@ -1,7 +1,7 @@
 {
-    "name": "asset-transfer-basic",
+    "name": "interbank-transfer",
     "version": "1.0.0",
-    "description": "Asset Transfer Basic Application implemented in JavaScript using fabric-gateway",
+    "description": "Inter-Bank Fund Transfer & Settlement System using Hyperledger Fabric Gateway",
     "engines": {
         "node": ">=20"
     },
