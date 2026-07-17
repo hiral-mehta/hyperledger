@@ -17,6 +17,12 @@ const { Contract } = require('fabric-contract-api');
 
 class InterbankTransfer extends Contract {
 
+    // Returns a deterministic timestamp from the tx proposal (same on all peers)
+    _getTxTimestamp(ctx) {
+        const ts = ctx.stub.getTxTimestamp();
+        return new Date(ts.seconds.low * 1000).toISOString();
+    }
+
     // ─────────────────────────────────────────────
     // LEDGER INITIALIZATION
     // ─────────────────────────────────────────────
@@ -32,7 +38,7 @@ class InterbankTransfer extends Contract {
                 balance: 500000,
                 currency: 'INR',
                 status: 'ACTIVE',
-                createdAt: new Date().toISOString(),
+                createdAt: this._getTxTimestamp(ctx),
             },
             {
                 docType: 'account',
@@ -43,7 +49,7 @@ class InterbankTransfer extends Contract {
                 balance: 750000,
                 currency: 'INR',
                 status: 'ACTIVE',
-                createdAt: new Date().toISOString(),
+                createdAt: this._getTxTimestamp(ctx),
             },
             {
                 docType: 'account',
@@ -54,7 +60,7 @@ class InterbankTransfer extends Contract {
                 balance: 1000000,
                 currency: 'INR',
                 status: 'ACTIVE',
-                createdAt: new Date().toISOString(),
+                createdAt: this._getTxTimestamp(ctx),
             },
         ];
 
@@ -100,7 +106,7 @@ class InterbankTransfer extends Contract {
             balance,
             currency,
             status: 'ACTIVE',
-            createdAt: new Date().toISOString(),
+            createdAt: this._getTxTimestamp(ctx),
         };
 
         await ctx.stub.putState(
@@ -221,7 +227,7 @@ class InterbankTransfer extends Contract {
             );
         }
 
-        const timestamp = new Date().toISOString();
+        const timestamp = this._getTxTimestamp(ctx);
 
         // Debit sender
         fromAccount.balance = parseFloat((fromAccount.balance - transferAmount).toFixed(2));
@@ -304,11 +310,36 @@ class InterbankTransfer extends Contract {
         let result = await historyIterator.next();
 
         while (!result.done) {
+            console.log('DEBUG: result.value.timestamp structure is:', typeof result.value.timestamp, result.value.timestamp);
+            let txTimestamp = new Date().toISOString();
+            if (result.value.timestamp) {
+                let seconds = 0;
+                if (result.value.timestamp.seconds) {
+                    console.log('DEBUG: result.value.timestamp.seconds is:', typeof result.value.timestamp.seconds, result.value.timestamp.seconds);
+                    if (typeof result.value.timestamp.seconds.low === 'number') {
+                        seconds = result.value.timestamp.seconds.low;
+                    } else if (typeof result.value.timestamp.seconds === 'number') {
+                        seconds = result.value.timestamp.seconds;
+                    } else if (typeof result.value.timestamp.seconds.toNumber === 'function') {
+                        seconds = result.value.timestamp.seconds.toNumber();
+                    }
+                }
+                console.log('DEBUG: parsed seconds is:', seconds);
+                if (seconds > 0) {
+                    txTimestamp = new Date(seconds * 1000).toISOString();
+                }
+            }
+
+            let data = '';
+            if (result.value.value && result.value.value.toString()) {
+                data = result.value.value.toString('utf8');
+            }
+
             const entry = {
                 txId: result.value.txId,
-                timestamp: new Date(result.value.timestamp.seconds.low * 1000).toISOString(),
-                isDelete: result.value.isDelete,
-                data: result.value.value.toString('utf8'),
+                timestamp: txTimestamp,
+                isDelete: !!result.value.isDelete,
+                data: data,
             };
             history.push(entry);
             result = await historyIterator.next();

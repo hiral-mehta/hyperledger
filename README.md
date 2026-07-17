@@ -199,7 +199,7 @@ cd ~/hyperledger/fabric-samples/test-network
 
 ---
 
-## 🛑 Tear Down
+## Tear Down
 
 ```bash
 cd ~/hyperledger/fabric-samples/test-network
