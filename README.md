@@ -121,6 +121,27 @@ npm install
 node src/app.js
 ```
 
+### 🔁 Restarting the Network (After Tear Down)
+
+If you have shut down the network using `./network.sh down` (or want to start fresh), you must bring the network back up, recreate the channel, and deploy the chaincode by running:
+
+```bash
+cd ~/hyperledger/fabric-samples/test-network
+
+# 1. Start the network
+./network.sh up
+
+# 2. Create the channel
+./network.sh createChannel -c mychannel
+
+# 3. Deploy the chaincode
+./network.sh deployCC \
+  -ccn interbank \
+  -ccp ../asset-transfer-basic/chaincode-javascript \
+  -ccl javascript \
+  -c mychannel
+```
+
 ---
 
 ## 📋 Smart Contract Functions
@@ -199,9 +220,39 @@ cd ~/hyperledger/fabric-samples/test-network
 
 ---
 
-## Tear Down
+## Stopping & Restarting (Preserving Ledger Data)
+
+> **Important:** `./network.sh down` **deletes all ledger data** (accounts, transactions, everything). Use the commands below if you want to stop and resume without losing your data.
+
+### Stop (without losing data)
+
+```bash
+# Stop all running Fabric containers
+docker stop $(docker ps -q)
+```
+
+### Resume (after stopping)
+
+```bash
+# Restart the stopped containers
+docker start $(docker ps -aq)
+
+# Then restart the Node.js server
+cd ~/hyperledger/fabric-samples/asset-transfer-basic/application-gateway-javascript
+npm run server
+```
+
+Your accounts and transactions will still be there. ✅
+
+---
+
+## Full Tear Down (Resets Everything)
+
+Use this only when you want a **complete fresh start**. This deletes all ledger data, crypto material, and containers.
 
 ```bash
 cd ~/hyperledger/fabric-samples/test-network
 ./network.sh down
 ```
+
+After a full tear down, follow the [Restarting the Network](#-restarting-the-network-after-tear-down) section to bring everything back up and click **"Initialize Ledger"** on the dashboard to re-seed the accounts.
